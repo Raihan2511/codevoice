@@ -1,0 +1,26 @@
+# AI REASONING
+lanchain
+langgraph
+lanchain-openai
+langchain-community
+langfuse
+
+# DJANGO PURPOSE
+django>=5.0,<5.1
+djangorestframework    #building APIs
+django-cors-headers    #To allow frontend to talk to backend
+django-environ         #for reading .env file 
+
+
+# databse and storage
+psycopg[binary]
+redis
+
+# --- Asynchronous Server (For Pipecat/WebSockets) ---
+uvicorn[standard]           # High-performance ASGI server
+daphne                      # Django's official ASGI interface (optional, but good)
+
+
+requests
+python-dotenv
+celery
