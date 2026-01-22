@@ -1,7 +1,7 @@
 # AI REASONING
-lanchain
+langchain
 langgraph
-lanchain-openai
+langchain-openai
 langchain-community
 langfuse
 
