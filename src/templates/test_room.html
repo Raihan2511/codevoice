@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CodeVoice Test Room</title>
+    <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
+    <style>
+        body { font-family: sans-serif; padding: 20px; background: #222; color: #fff; }
+        input, button { padding: 10px; font-size: 16px; margin: 5px 0; width: 100%; box-sizing: border-box;}
+        button { background: #00d1b2; color: white; border: none; cursor: pointer; }
+        #status { margin-top: 20px; font-weight: bold; color: #ffd700; }
+    </style>
+</head>
+<body>
+    <h2>🎤 CodeVoice Connection Test</h2>
+    <p>Paste the User Token you generated via terminal below:</p>
+    
+    <input type="text" id="tokenInput" placeholder="Paste eyJhbGciOiJIUzI1NiI... token here">
+    <button onclick="connectToRoom()">Connect to Interview Room</button>
+    
+    <div id="status">Status: Disconnected</div>
+
+    <script>
+        const LIVEKIT_URL = "ws://localhost:7880";
+
+        async function connectToRoom() {
+            const token = document.getElementById('tokenInput').value;
+            const statusEl = document.getElementById('status');
+
+            if (!token) {
+                alert("Please paste a token first!");
+                return;
+            }
+
+            statusEl.innerText = "Status: Connecting...";
+
+            try {
+                // 1. Initialize the Room
+                const room = new LivekitClient.Room();
+
+                // 2. Handle Audio Track (When the AI speaks)
+                room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => {
+                    if (track.kind === LivekitClient.TrackKind.Audio) {
+                        const element = track.attach();
+                        document.body.appendChild(element);
+                        statusEl.innerText = "Status: AI is Speaking! (Check Audio)";
+                    }
+                });
+
+                // 3. Connect to Server
+                await room.connect(LIVEKIT_URL, token);
+                statusEl.innerText = "Status: Connected! Say 'Hello'...";
+
+                // 4. Publish Microphone (So AI can hear you)
+                await room.localParticipant.enableCameraAndMicrophone(false, true);
+
+            } catch (error) {
+                console.error(error);
+                statusEl.innerText = "Error: " + error.message;
+            }
+        }
+    </script>
+</body>
+</html>

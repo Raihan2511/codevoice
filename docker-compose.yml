@@ -21,12 +21,22 @@ services:
       retries: 5
 
   # --- 2. THE MESSAGE BROKER (Redis) ---
-  # Required by Celery (for async tasks) and Daphne (for channel layers)
   redis:
     image: redis:7-alpine
     container_name: codevoice_redis
     ports:
       - "6379:6379"
+
+  # --- 3. LIVEKIT SERVER (The Voice Traffic Cop) ---
+  # This fixes the "Connection Refused" error by running the server for you.
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: codevoice_livekit
+    command: --dev --bind 0.0.0.0 # Starts in Dev mode
+    ports:
+      - "7880:7880"      # HTTP / WebSocket
+      - "7881:7881"      # TCP (RTC)
+      - "7882:7882/udp"  # UDP (RTC)
 
 volumes:
   postgres_data:

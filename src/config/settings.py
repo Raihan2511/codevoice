@@ -51,8 +51,8 @@ INSTALLED_APPS = [
     # Local Apps (Your custom logic)
     # We prefix them with 'apps.' because they live in the 'src/apps/' folder.
     'apps.users',
-    # 'apps.interviews',
-    # 'apps.simulation', # We will enable this later when we build the AI brain
+    'apps.interviews',
+    'apps.simulation', # We will enable this later when we build the AI brain
 ]
 
 # --- 5. MIDDLEWARE ---
@@ -85,7 +85,7 @@ TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
         # We will create a global 'templates' folder later
-        'DIRS': [BASE_DIR / 'templates'], 
+        'DIRS': [BASE_DIR / 'src' / 'templates'], 
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
