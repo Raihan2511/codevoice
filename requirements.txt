@@ -25,4 +25,6 @@ requests
 python-dotenv
 protobuf==4.25.3         
 celery
-"pipecat-ai[livekit,silero]"    
+pipecat-ai
+livekit
+silero

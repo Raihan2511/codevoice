@@ -51,7 +51,7 @@ INSTALLED_APPS = [
     # Local Apps (Your custom logic)
     # We prefix them with 'apps.' because they live in the 'src/apps/' folder.
     'apps.users',
-    'apps.interviews',
+    # 'apps.interviews',
     # 'apps.simulation', # We will enable this later when we build the AI brain
 ]
 
