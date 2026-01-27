@@ -1,111 +1,123 @@
-# CodeVoice - AI-Powered Voice Application
+# CodeVoice: AI-Powered Technical Interview Simulator
 
-## 1. Project Overview & Deep Analysis
+**CodeVoice** is a scalable, real-time AI platform designed to conduct automated technical interviews. It acts as an interactive "Interviewer Bot" that can listen to candidates, evaluate their responses using LLMs, and provide real-time feedback.
 
-**CodeVoice** is architected as a high-performance, real-time AI application foundation. It is designed to handle voice data, manage asynchronous tasks, and integrate with modern AI pipelines, though currently, it primarily provides the **infrastructure layer**.
-
-### Core Architecture
-The system follows a **Event-Driven, Service-Oriented Architecture** (monolithic repo, but modular services):
-
-1.  **Django (The Brain)**:
-    *   Serves as the control plane for Users, Data, and Business Logic.
-    *   Configured to use **Daphne** (ASGI) instead of WSGI, enabling **WebSockets** and **Async** capabilities crucial for real-time voice streaming.
-2.  **Backing Services (The Muscle)**:
-    *   **PostgreSQL**: Relational data storage (Users, Metadata).
-    *   **Redis**: High-speed message broker for:
-        *   **Celery**: Background task processing (e.g., "Process this recording", "Summarize interview").
-        *   **Channel Layers**: Handling WebSocket message distribution for real-time chat/voice state.
-3.  **AI Integration (The Intelligence - Planning Phase)**:
-    *   Dependencies are present for **LangChain** (LLM Orchestration) and **Pipecat** (Real-time multimodal agents), but the specific implementation logic (Agents, Pipelines) is yet to be added to the source code.
+The system is built on a **Service-Oriented Architecture** using **Django** for the control plane and **Pipecat** for the real-time AI pipeline.
 
 ---
 
-## 2. Detailed Folder Structure
+## 🏗 System Architecture
 
-Here is exactly what exists in your project and what each file/folder does:
+The application is composed of three main layers:
 
-```text
-codevoice/
-├── .env                    # [Generated] Environment variables (Database URLs, API Keys).
-├── .env.example            # Template for your .env file.
-├── docker-compose.yml      # Orchestration instructions to spin up Postgres & Redis.
-├── requirements.txt        # List of all Python libraries needed.
-├── docker/                 # Helper scripts for Docker/Development.
-│   └── local/
-│       └── django/
-│           ├── start.sh    # Script to boot the Django server (currently empty/placeholder).
-│           └── celery...   # (Future) Scripts to start background workers.
-│
-├── src/                    # THE SOURCE CODE ROOT
-│   ├── manage.py           # Django's command-line utility (runserver, migrate, etc.).
-│   │
-│   ├── apps/               # Business Logic Modules
-│   │   ├── users/          # [ACTIVE] User Management App.
-│   │   │   ├── models.py   # Defines the Custom 'User' database table.
-│   │   │   └── ...         # Standard Django app files.
-│   │   ├── interviews/     # [EMPTY] Placeholder for Interview logic (recordings, sessions).
-│   │   └── simulation/     # [EMPTY] Placeholder for AI Simulation logic.
-│   │
-│   └── config/             # Project Configuration (The "Core")
-│       ├── settings.py     # Global settings (Apps, DB connection, Middleware).
-│       ├── urls.py         # URL Routing (currently only has /admin).
-│       ├── asgi.py         # Entry point for Async Server (WebSockets).
-│       └── wsgi.py         # Entry point for traditional HTTP Server.
+### 1. The Control Plane (Django Monolith)
+*   **Role**: Manages users, interview sessions, data persistence, and business logic.
+*   **Core Components**:
+    *   **REST API**: Built with `djangorestframework` (Foundations laid in `apps.users`, `apps.interviews`).
+    *   **Database**: PostgreSQL (via Docker) stores Users, Questions, and Interview history.
+    *   **Task Queue**: Redis + Celery (configured in `settings.py`) for handling long-running tasks like audio processing or report generation.
+
+### 2. The AI Pipeline (Pipecat & LiveKit)
+*   **Role**: Handles the real-time audio/video streaming and "thinking" process.
+*   **Location**: `src/apps/simulation/bot.py`.
+*   **Flow**:
+    1.  **Transport**: **LiveKit** handles the WebRTC room connection (Audio I/O).
+    2.  **STT (Ears)**: **Deepgram** transcribes user speech to text in real-time.
+    3.  **LLM (Brain)**: **OpenAI / Krutrim** (GPT-OSS-120b) receives the transcript + context and generates a response.
+    4.  **TTS (Mouth)**: **Deepgram** converts the LLM's text response back to high-quality audio (`aura-helios-en` voice).
+
+### 3. The Real-Time Gateway (ASGI & WebSockets)
+*   **Role**: Connects the user's browser to the backend.
+*   **Technology**: **Daphne** (ASGI Server) sits in front of Django to handle WebSocket connections alongside standard HTTP requests.
+
+---
+
+## 📂 Codebase Deep Dive
+
+### 1. Simulation App (`src/apps/simulation/`)
+ This is the heart of the AI functionality.
+*   **`bot.py`**: Contains the `run_ai_bot` function.
+    *   **Pipeline Assembly**: connects `DeepgramSTTService` -> `OpenAILLMService` -> `DeepgramTTSService`.
+    *   **Event Handling**: Listens for `on_first_participant_joined` to trigger the "System Online" greeting.
+    *   **Logic**: It uses `pipecat.pipeline.task.PipelineTask` to run the conversation loop asynchronously.
+
+### 2. Interviews App (`src/apps/interviews/`)
+Manages the structure of an interview.
+*   **`models.py`**:
+    *   **`Question`**: Stores the question bank, currently supporting difficulty levels (EASY, MEDIUM, HARD) and "expected key points" for grading.
+    *   **`InterviewSession`**: A state machine tracking a user's specific attempt (Started -> Completed/Failed). Tracks total score.
+    *   **`InterviewTurn`**: Granular tracking of every exchange. Stores the `ai_message`, `user_transcript`, and even the `audio_file` for audit trails. Includes an AI-generated `score` (0-10) per answer.
+
+### 3. Users App (`src/apps/users/`)
+Custom authentication logic.
+*   **`models.py`**: Implements a custom `User` model inheriting from `AbstractUser`.
+    *   **Security Feature**: Uses **UUIDs** instead of sequential integers for primary keys to prevent ID enumeration attacks.
+
+### 4. Configuration (`src/config/`)
+*   **`settings.py`**:
+    *   **Environment Variables**: Heavily uses `django-environ` to read secrets (API Keys, DB URLs) from `.env`.
+    *   **Apps**: Registers `daphne` (top priority) and custom apps (`users`, `interviews`, `simulation`).
+    *   **CORS**: Configured to allow frontend connections (currently open to all for dev).
+*   **`asgi.py`**: The entry point for the Async server. (Note: WebSocket routing is currently a placeholder awaiting implementation).
+
+---
+
+## 🚀 Setup & Installation
+
+### Prerequisites
+*   **Docker Desktop** (for Redis & Postgres)
+*   **Python 3.10+**
+*   **LiveKit Server** (Managed or Local)
+*   **API Keys**: Deepgram, OpenAI/Krutrim.
+
+### Step 1: Services (Docker)
+Start the backing services (Database & Broker):
+```bash
+docker-compose up -d
+```
+*   Verifies that `codevoice_db` (Postgres) and `codevoice_redis` are running.
+
+### Step 2: Environment
+Create a `.env` file in the project root:
+```ini
+DEBUG=on
+DATABASE_URL=postgres://user:password@localhost:5432/codevoice
+REDIS_URL=redis://localhost:6379/0
+DEEPGRAM_API_KEY=your_key
+KRUTRIM_API_KEY=your_key
+LIVEKIT_URL=wss://your-project.livekit.cloud
+LIVEKIT_API_KEY=your_key
+LIVEKIT_API_SECRET=your_secret
+```
+
+### Step 3: Install Dependencies
+```bash
+pip install -r requirements.txt
+```
+*Note: This installs heavy dependencies like `pipecat-ai`, `livekit`, `torch` (via silero implied dependency), and `django`.*
+
+### Step 4: Database Setup
+Apply the migrations to create the tables tailored to our apps:
+```bash
+python src/manage.py migrate
+```
+
+### Step 5: Run the Server
+Use the Django command which wraps Daphne:
+```bash
+python src/manage.py runserver
 ```
 
 ---
 
-## 3. Current Capabilities vs. Road Map
+## 🔮 Roadmap / Pending Implementation
 
-| Feature Area | Current Status | Description |
-| :--- | :--- | :--- |
-| **Infrastructure** | ✅ **Ready** | Dockerized Postgres & Redis are working. Env vars are set up. |
-| **User System** | ✅ **Ready** | Custom User model is active and migrated to DB. |
-| **Authentication** | ⚠️ **Partial** | Backend support exists (Django Auth), but no API endpoints (Login/Signup) are defined in `urls.py`. |
-| **Real-Time Voice** | ❌ **Pending** | `interviews` app is empty. `asgi.py` is default (no WebSocket routing). LiveKit/Pipecat logic is missing. |
-| **AI Processing** | ❌ **Pending** | `simulation` app is empty. LangChain/OpenAI dependencies are installed but not used yet. |
+While the infrastructure is solid, these connections need to be finalized:
+
+1.  **Orchestrator**: Connecting the `run_ai_bot` function (in `simulation`) to a Celery task or an API endpoint so a frontend can "start" an interview.
+2.  **WebSocket Routing**: Updates to `src/config/asgi.py` to route WebSocket traffic to a consumer that manages the LiveKit token generation.
+3.  **Frontend**: A simple UI to login, view the dashboard, and join the LiveKit room.
 
 ---
 
-## 4. Quick Start Guide
-
-### Prerequisites
-*   Docker Desktop (Running)
-*   Python 3.10+
-*   Git
-
-### How to Run (The "Happy Path")
-
-1.  **Start Database & Redis**
-    ```bash
-    docker-compose up -d
-    ```
-
-2.  **Install Application**
-    ```bash
-    # Install dependencies
-    pip install -r requirements.txt
-    
-    # Run Database Migrations
-    python src/manage.py migrate
-    ```
-
-3.  **Run Server**
-    ```bash
-    python src/manage.py runserver
-    ```
-    *   Server runs at: `http://127.0.0.1:8000/`
-    *   Admin Panel: `http://127.0.0.1:8000/admin` (You'll need to create a superuser with `python src/manage.py createsuperuser` to log in).
-
-### Troubleshooting
-*   **Database connection failed?** Ensure Docker container `codevoice_db` is running (`docker ps`).
-*   **Import Errors?** If you see errors about `pipecat-ai`, likely the "extras" failed to install. We fixed this by installing the base package.
-
----
-
-## 5. Next Development Steps (Developer Guide)
-To advance this project from "Skeleton" to "Application", you should:
-
-1.  **Define API Endpoints**: Add `djangorestframework` views to `src/apps/users/` for Login/Register.
-2.  **Build the Interview App**: Create models in `src/apps/interviews/models.py` to store "Sessions" and "Recordings".
-3.  **Wire up WebSockets**: Modify `src/config/asgi.py` to route WebSocket connections to a Consumer (which will handle real-time voice data).
+**Tech Stack**: Python, Django 5, PostgreSQL, Redis, Celery, LiveKit, Pipecat AI, LangChain, Deepgram.
