@@ -29,7 +29,24 @@ class Command(BaseCommand):
         # 3. CONNECT
         ws_url = settings.LIVEKIT_API_URL
         
-        self.stdout.write(f"🔹 Connecting to: {ROOM_NAME}")
+        # --- NEW: GENERATE USER TOKEN FOR THE BROWSER ---
+        user_token = api.AccessToken(
+            settings.LIVEKIT_API_KEY,
+            settings.LIVEKIT_API_SECRET
+        ).with_identity("user-listener") \
+         .with_name("Human User") \
+         .with_grants(api.VideoGrants(
+             room_join=True,
+             room=ROOM_NAME,
+         )).to_jwt()
+
+        # Write token to a file for easier retrieval
+        with open("token.txt", "w") as f:
+            f.write(user_token)
+
+        self.stdout.write(self.style.WARNING(f"\n📢 COPY THIS TOKEN FOR test_room.html:\n{user_token}\n"))
+
+        self.stdout.write(f"🔹 Connecting Bot to: {ROOM_NAME}")
         
         try:
             # UPDATE: We now pass ROOM_NAME as the 3rd argument

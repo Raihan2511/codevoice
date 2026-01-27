@@ -9,8 +9,8 @@ from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineTask
 
-# 1. FRAMES (Updated to fix the Warning)
-from pipecat.frames.frames import LLMMessagesUpdateFrame
+# 1. FRAMES (We use TextFrame for instant speech)
+from pipecat.frames.frames import TextFrame
 
 # 2. TRANSPORT
 from pipecat.transports.livekit.transport import LiveKitTransport, LiveKitParams
@@ -35,7 +35,6 @@ async def run_ai_bot(room_url: str, token: str, room_name: str):
         stt = DeepgramSTTService(api_key=settings.DEEPGRAM_API_KEY)
         tts = DeepgramTTSService(api_key=settings.DEEPGRAM_API_KEY, voice="aura-helios-en")
 
-        # --- B. CONFIGURE TRANSPORT ---
         transport = LiveKitTransport(
             url=room_url,
             token=token,
@@ -43,33 +42,26 @@ async def run_ai_bot(room_url: str, token: str, room_name: str):
             params=LiveKitParams(audio_in_enabled=True, audio_out_enabled=True),
         )
 
-        # --- C. BUILD PIPELINE ---
+        # --- B. BUILD PIPELINE ---
         pipeline = Pipeline([
             transport.input(),   # Listen
-            stt,                 # Transcribe
-            llm,                 # Think
-            tts,                 # Speak
+            stt,                 # Transcribe (Voice -> Text)
+            llm,                 # Think (Text -> Text)
+            tts,                 # Speak (Text -> Audio)
             transport.output(),  # Play Audio
         ])
 
         task = PipelineTask(pipeline)
 
-        # --- D. EVENT HANDLERS ---
+        # --- C. EVENT HANDLERS ---
         @transport.event_handler("on_first_participant_joined")
         async def on_first_participant_joined(transport, participant):
             logger.success(f"User joined: {participant}")
             
-            # THE FIX: Use LLMMessagesUpdateFrame with run_llm=True
-            # This forces the AI to process this message immediately.
-            await task.queue_frames([
-                LLMMessagesUpdateFrame(
-                    messages=[{
-                        "role": "user", 
-                        "content": "Hello! I am ready for the interview. Please introduce yourself briefly."
-                    }],
-                    run_llm=True  # <--- This triggers the "Generating chat" action
-                )
-            ])
+            # --- THE FIX IS HERE ---
+            # Instead of asking the AI to "think" of a hello (which takes 15s),
+            # we force the Mouth (TTS) to speak this text immediately.
+            await task.queue_frames([TextFrame("System Online. I am ready.")])
 
         runner = PipelineRunner()
         await runner.run(task)
