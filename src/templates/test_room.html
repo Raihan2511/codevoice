@@ -93,7 +93,11 @@
                 statusEl.innerText = "Status: Connected. Waiting for bot...";
 
                 // Turn on your mic so the bot knows you are real
-                await room.localParticipant.enableCameraAndMicrophone(false, true);
+                //await room.localParticipant.enableCameraAndMicrophone(false, true);
+                const audioTrack = await LivekitClient.createLocalAudioTrack();
+                await room.localParticipant.publishTrack(audioTrack);
+
+                statusEl.innerText = "Status: 🟢 Connected & Mic Active";
 
             } catch (error) {
                 console.error(error);

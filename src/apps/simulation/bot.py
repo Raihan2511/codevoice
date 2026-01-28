@@ -1,67 +1,120 @@
+# src\apps\simulation\bot.py
 import os
-import sys
-import aiohttp
-from django.conf import settings
 from loguru import logger
 
-# --- PIPECAT IMPORTS ---
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineTask
-
-# 1. FRAMES (We use TextFrame for instant speech)
-from pipecat.frames.frames import TextFrame
-
-# 2. TRANSPORT
+from pipecat.frames.frames import TextFrame, LLMMessagesFrame
 from pipecat.transports.livekit.transport import LiveKitTransport, LiveKitParams
 
-# 3. SERVICES
 from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.services.deepgram.tts import DeepgramTTSService
 from pipecat.services.openai.llm import OpenAILLMService
 
+from pipecat.processors.aggregators.llm_context import LLMContext
+from pipecat.processors.aggregators.llm_response_universal import (
+    LLMContextAggregatorPair,
+    LLMUserAggregatorParams,
+)
+
+from pipecat.turns.user_turn_strategies import UserTurnStrategies
+from pipecat.turns.user_stop.turn_analyzer_user_turn_stop_strategy import (
+    TurnAnalyzerUserTurnStopStrategy,
+)
+from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import (
+    LocalSmartTurnAnalyzerV3,
+)
+
+
 async def run_ai_bot(room_url: str, token: str, room_name: str):
-    logger.info(f"🤖 AI connecting to room: {room_name} at {room_url}")
+    """Main entry point for the AI interviewer bot"""
+    logger.info(f"🤖 AI connecting to room: {room_name}")
 
-    async with aiohttp.ClientSession() as session:
-        
-        # --- A. CONFIGURE SERVICES ---
-        llm = OpenAILLMService(
-            api_key=settings.KRUTRIM_API_KEY, 
-            base_url="https://cloud.olakrutrim.com/v1",
-            model="gpt-oss-120b",
-        )
+    # -------- SERVICES --------
+    stt = DeepgramSTTService(
+        api_key=os.getenv("DEEPGRAM_API_KEY")
+    )
 
-        stt = DeepgramSTTService(api_key=settings.DEEPGRAM_API_KEY)
-        tts = DeepgramTTSService(api_key=settings.DEEPGRAM_API_KEY, voice="aura-helios-en")
+    tts = DeepgramTTSService(
+        api_key=os.getenv("DEEPGRAM_API_KEY"),
+        voice="aura-helios-en",
+    )
 
-        transport = LiveKitTransport(
-            url=room_url,
-            token=token,
-            room_name=room_name,
-            params=LiveKitParams(audio_in_enabled=True, audio_out_enabled=True),
-        )
+    llm = OpenAILLMService(
+        api_key=os.getenv("KRUTRIM_API_KEY"),
+        base_url="https://cloud.olakrutrim.com/v1",
+        model="gpt-oss-120b",
+    )
 
-        # --- B. BUILD PIPELINE ---
-        pipeline = Pipeline([
-            transport.input(),   # Listen
-            stt,                 # Transcribe (Voice -> Text)
-            llm,                 # Think (Text -> Text)
-            tts,                 # Speak (Text -> Audio)
-            transport.output(),  # Play Audio
-        ])
+    # -------- TRANSPORT --------
+    transport = LiveKitTransport(
+        url=room_url,
+        token=token,
+        room_name=room_name,
+        params=LiveKitParams(
+            audio_in_enabled=True,
+            audio_out_enabled=True
+        ),
+    )
 
-        task = PipelineTask(pipeline)
+    # -------- CONTEXT --------
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are an AI technical interviewer. "
+                "Ask one clear interview question at a time. "
+                "Wait for the user to finish speaking before responding. "
+                "Provide constructive feedback on their answers."
+            )
+        }
+    ]
+    
+    context = LLMContext(messages)
 
-        # --- C. EVENT HANDLERS ---
-        @transport.event_handler("on_first_participant_joined")
-        async def on_first_participant_joined(transport, participant):
-            logger.success(f"User joined: {participant}")
-            
-            # --- THE FIX IS HERE ---
-            # Instead of asking the AI to "think" of a hello (which takes 15s),
-            # we force the Mouth (TTS) to speak this text immediately.
-            await task.queue_frames([TextFrame("System Online. I am ready.")])
+    user_aggr, assistant_aggr = LLMContextAggregatorPair(
+        context,
+        user_params=LLMUserAggregatorParams(
+            user_turn_strategies=UserTurnStrategies(
+                stop=[
+                    TurnAnalyzerUserTurnStopStrategy(
+                        turn_analyzer=LocalSmartTurnAnalyzerV3()
+                    )
+                ]
+            )
+        ),
+    )
 
-        runner = PipelineRunner()
-        await runner.run(task)
+    # -------- PIPELINE --------
+    pipeline = Pipeline([
+        transport.input(),
+        stt,
+        user_aggr,
+        llm,
+        tts,
+        transport.output(),
+        assistant_aggr,
+    ])
+
+    task = PipelineTask(pipeline)
+
+    # -------- EVENT HANDLERS --------
+    @transport.event_handler("on_first_participant_joined")
+    async def on_first_participant_joined(transport, participant):
+        logger.success(f"👤 User joined: {participant}")
+        # Greet the user and start the interview
+        messages.append({
+            "role": "system",
+            "content": "Greet the candidate and ask the first technical interview question."
+        })
+        await task.queue_frames([LLMMessagesFrame(messages)])
+
+    @transport.event_handler("on_participant_left")
+    async def on_participant_left(transport, participant, reason):
+        logger.warning(f"👤 User left: {participant}")
+        await task.cancel()
+
+    # -------- RUN --------
+    runner = PipelineRunner()
+    await runner.run(task)
