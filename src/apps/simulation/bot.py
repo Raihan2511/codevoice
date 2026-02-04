@@ -66,7 +66,9 @@ async def run_ai_bot(room_url: str, token: str, room_name: str):
                 "You are an AI technical interviewer. "
                 "Ask one clear interview question at a time. "
                 "Wait for the user to finish speaking before responding. "
-                "Provide constructive feedback on their answers."
+                "Provide constructive feedback on their answers. "
+                "IMPORTANT: Do NOT use markdown formatting in your responses. "
+                "Speak naturally without using asterisks, underscores, or other formatting symbols."
             )
         }
     ]
